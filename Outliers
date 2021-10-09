@@ -1,0 +1,88 @@
+create or replace transient table outlier_cohort as
+
+  select 
+      raw:event.event_id::string as event_id,
+      to_timestamp_ntz(raw:event.event_timestamp) as event_timestamp,
+      raw:context.device_id::string as device_id,
+      raw:context.match_id::string as match_id,
+      raw:version::string as version,
+      raw:event.event_data.EntryCash as entrycash,
+      raw:event.event_data.EntryCash * 0.075 as entrycash0075
+
+  from staging.public.raw_data
+  where game = 'cooking'
+  and build = 'production'
+  --and date >= '2021-10-01'
+  and to_timestamp_ntz(raw:event.event_timestamp)::date >='2021-10-01'
+  and lower(raw:event.event_name) = 'entrycash'
+  and lower(raw:context.device_id) in (select distinct lower(metrics_device_key) from fact_metrics
+                                      where metrics_install_date = '2021-06-06')
+  order by event_timestamp asc
+  
+  
+select distinct top 20 
+    o.event_id, o.event_timestamp, o.device_id, o.version, o.entrycash0075 as revenue, e.match_type,
+    d.device_country, d.device_phone, d.device_os
+from outlier_cohort  o
+join cooking_event e
+on o.match_id = e.match_id
+and e.event_name = 'skillzmatchstart'
+join dim_devices d
+on lower(o.device_id) = lower(d.device_key)
+
+with outlier_player as (
+  select distinct
+      o.event_id, o.event_timestamp, o.device_id, o.version, o.entrycash0075 as revenue, e.match_type,
+      d.device_country, d.device_phone, d.device_os
+  from outlier_cohort  o
+  join cooking_event e
+  on o.match_id = e.match_id
+  and e.event_name = 'skillzmatchstart'
+  join dim_devices d
+  on lower(o.device_id) = lower(d.device_key)  
+  where upper(o.device_id) in ('F6560619-6B8F-4020-A1DB-F5228312F0AA','FA1E3D72-8815-49E0-86D1-D59C4187F00F')
+  )
+use   
+select device_id, event_timestamp::date date, match_type, sum(revenue) as Revenue
+from outlier_player
+where upper(device_id) = upper('FA1E3D72-8815-49E0-86D1-D59C4187F00F')
+group by device_id , date, match_type;
+
+
+
+--identify outliers
+select device_id,round(sum(entry_cash)*0.075,2) as Revenue from game_events.public.outlier_all_cohort
+where cohort = '2021-06-06'
+and event_name = 'cookinggamestart'
+group by device_id
+order by revenue desc;
+
+select * from outlier_all_cohort
+limit 1;
+
+-- cohort:06/06 -> events
+select device_id,event_name,event_timestamp,round(entry_cash,2) as revenue,match_id,match_type from game_events.public.cooking_event
+where upper(device_id) in (upper('fa1e3d72-8815-49e0-86d1-d59c4187f00f'),upper('f6560619-6b8f-4020-a1db-f5228312f0aa'),upper('35823832-2d4b-4fee-81fb-0b8a7863bd05'),upper('936f3e66-aa9c-4c89-a969-936a4abe2e60'))
+and build = 'production'
+and game='cooking'
+order by device_id,EVENT_TIMESTAMP asc;
+
+
+-- devices by date
+select device_id,EVENT_TIMESTAMP::date as date,round(sum(entry_cash)*0.075,2) as revenue, count(distinct match_id) as games from game_events.public.outlier_all_cohort
+where cohort = '2021-06-06'
+and EVENT_NAME = 'entrycash'
+and upper(device_id) in (upper('fa1e3d72-8815-49e0-86d1-d59c4187f00f'),upper('f6560619-6b8f-4020-a1db-f5228312f0aa'),upper('35823832-2d4b-4fee-81fb-0b8a7863bd05'),upper('936f3e66-aa9c-4c89-a969-936a4abe2e60'))
+group by EVENT_TIMESTAMP::date,device_id
+order by device_id, date asc;
+
+-- devices by day and tournament
+select device_id,EVENT_TIMESTAMP::date as date,match_type,round(sum(entry_cash)*0.075,2) as revenue, count(distinct match_id) as games from game_events.public.outlier_all_cohort
+where cohort = '2021-06-06'
+and EVENT_NAME = 'entrycash'
+and upper(device_id) in (upper('fa1e3d72-8815-49e0-86d1-d59c4187f00f'),upper('f6560619-6b8f-4020-a1db-f5228312f0aa'),upper('35823832-2d4b-4fee-81fb-0b8a7863bd05'),upper('936f3e66-aa9c-4c89-a969-936a4abe2e60'))
+group by EVENT_TIMESTAMP::date,match_type,device_id
+order by device_id, date asc;
+
+
+
