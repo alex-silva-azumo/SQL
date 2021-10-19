@@ -85,4 +85,11 @@ group by EVENT_TIMESTAMP::date,match_type,device_id
 order by device_id, date asc;
 
 
+-- First 10 matches.
+select DEVICE_ID,EVENT_TIMESTAMP,MATCH_ID,MATCH_TYPE,ROUND(ENTRY_CASH,2)AS ENTRY_CASH from game_events.public.outlier_all_cohort
+where UPPER(device_id) = upper('864122c0-b2b7-4d81-b28b-95856b3174d9')
+and event_name = 'cookinggamestart'
+order by EVENT_TIMESTAMP ASC
+LIMIT 10;
+
 
